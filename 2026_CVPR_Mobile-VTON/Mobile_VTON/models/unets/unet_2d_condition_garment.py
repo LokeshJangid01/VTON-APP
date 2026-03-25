@@ -1660,13 +1660,18 @@ class UNet2DConditionModel(
         return UNet2DConditionOutput(sample=sample), garment_features
 
     def calculate_2d_rope_emb(self, block_out_channel, num_attention_heads, image_height, image_width):
-        image_rotary_emb = get_2d_rotary_pos_embed(
-            block_out_channel // num_attention_heads,
-            ((0, 0), (image_width, image_height)),
-            (image_width, image_height),
-            device=self.device,
+        kwargs = dict(
+            dim=block_out_channel // num_attention_heads,
+            crops_coords=((0, 0), (image_width, image_height)),
+            grid_size=(image_width, image_height),
             output_type="pt",
         )
+        try:
+            image_rotary_emb = get_2d_rotary_pos_embed(device=self.device, **kwargs)
+        except TypeError:
+            image_rotary_emb = get_2d_rotary_pos_embed(**kwargs)
+            if isinstance(image_rotary_emb, tuple):
+                image_rotary_emb = tuple(x.to(self.device) for x in image_rotary_emb)
         return image_rotary_emb
 
     def set_sample_size(self, sample_size):
@@ -1717,13 +1722,18 @@ class UNet2DConditionModel(
         prev_image_height, prev_image_width, align_corners=True
     ):
         device = self.device
-        image_rotary_emb = get_2d_rotary_pos_embed(
-            block_out_channel // num_attention_heads,
-            ((0, 0), (prev_image_height, prev_image_width)),
-            (prev_image_height, prev_image_width),
-            device=device,
+        kwargs = dict(
+            dim=block_out_channel // num_attention_heads,
+            crops_coords=((0, 0), (prev_image_height, prev_image_width)),
+            grid_size=(prev_image_height, prev_image_width),
             output_type="pt",
         )
+        try:
+            image_rotary_emb = get_2d_rotary_pos_embed(device=device, **kwargs)
+        except TypeError:
+            image_rotary_emb = get_2d_rotary_pos_embed(**kwargs)
+            if isinstance(image_rotary_emb, tuple):
+                image_rotary_emb = tuple(x.to(device) for x in image_rotary_emb)
         cos, sin = image_rotary_emb
         D = (block_out_channel // num_attention_heads) // 2
         emb_h_0 = cos[:, :D]
