@@ -9,7 +9,15 @@ import torch.nn.functional as F
 from torch import nn
 
 from diffusers.utils import deprecate, is_torch_xla_available
-from diffusers.utils.import_utils import is_torch_npu_available, is_torch_xla_version, is_xformers_available
+try:
+    # Newer diffusers
+    from diffusers.utils.import_utils import is_torch_npu_available, is_torch_xla_version, is_xformers_available
+except ImportError:
+    # Older diffusers may not expose `is_torch_xla_version`.
+    from diffusers.utils.import_utils import is_torch_npu_available, is_xformers_available
+
+    def is_torch_xla_version(*args, **kwargs):
+        return False
 from diffusers.utils.torch_utils import maybe_allow_in_graph
 from diffusers.models.attention_processor import (
     AttnProcessor,
@@ -43,6 +51,8 @@ if is_xformers_available():
     import xformers.ops
 else:
     xformers = None
+
+is_spmd = lambda: False
 
 if is_torch_xla_available():
     # flash attention pallas kernel is introduced in the torch_xla 2.3 release.
