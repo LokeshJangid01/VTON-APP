@@ -1,4 +1,5 @@
 import asyncio
+import os
 import shutil
 import subprocess
 import sys
@@ -11,17 +12,18 @@ from fastapi.staticfiles import StaticFiles
 
 
 APP_DIR = Path(__file__).resolve().parent
-MODEL_DIR = APP_DIR.parent / "2026_CVPR_Mobile-VTON"
-DATASET_DIR = MODEL_DIR / "Mobile_VTON" / "VITON-HD"
-EXTERNAL_TEST_DIR = APP_DIR.parent / "test" / "test"
+MODEL_DIR = Path(os.getenv("MODEL_DIR", str(APP_DIR.parent / "2026_CVPR_Mobile-VTON")))
+DATASET_DIR = Path(os.getenv("DATASET_DIR", str(MODEL_DIR / "Mobile_VTON" / "VITON-HD")))
+EXTERNAL_TEST_DIR = Path(os.getenv("EXTERNAL_TEST_DIR", str(APP_DIR.parent / "test" / "test")))
 SOURCE_CLOTH_DIR = EXTERNAL_TEST_DIR / "cloth"
 SOURCE_DESCRIPTIONS_CANDIDATES = [
     EXTERNAL_TEST_DIR / "image_descriptions.txt",
     DATASET_DIR / "test" / "image_descriptions.txt",
 ]
-CHECKPOINT_DIR = MODEL_DIR / "checkpoint" / "checkpoint"
-RUNTIME_DIR = APP_DIR / "runtime"
+CHECKPOINT_DIR = Path(os.getenv("CHECKPOINT_DIR", str(MODEL_DIR / "checkpoint" / "checkpoint")))
+RUNTIME_DIR = Path(os.getenv("RUNTIME_DIR", str(APP_DIR / "runtime")))
 JOBS_DIR = RUNTIME_DIR / "jobs"
+RUNTIME_VOLUME_NAME = os.getenv("RUNTIME_VOLUME_NAME", "")
 
 ALLOWED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 inference_lock = asyncio.Lock()
@@ -46,6 +48,22 @@ def _load_descriptions() -> dict[str, str]:
 
 def _safe_name(filename: str) -> str:
     return Path(filename).name.replace(" ", "_")
+
+
+def _sync_runtime_volume(commit: bool) -> None:
+    if not RUNTIME_VOLUME_NAME:
+        return
+    try:
+        import modal
+
+        vol = modal.Volume.from_name(RUNTIME_VOLUME_NAME, create_if_missing=False)
+        if commit:
+            vol.commit()
+        else:
+            vol.reload()
+    except Exception:
+        # Best-effort only: app still works on single-container routing.
+        pass
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -77,6 +95,8 @@ async def get_cloth_image(cloth_name: str):
 async def get_result(job_id: str, filename: str):
     safe = _safe_name(filename)
     path = JOBS_DIR / job_id / "output" / safe
+    if not path.exists():
+        _sync_runtime_volume(commit=False)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Result not found")
     return FileResponse(path)
@@ -188,11 +208,13 @@ async def run_tryon(
 
     if not MODEL_DIR.exists():
         raise HTTPException(status_code=500, detail=f"Model dir not found: {MODEL_DIR}")
-    if not CHECKPOINT_DIR.exists():
-        raise HTTPException(status_code=500, detail=f"Checkpoint dir not found: {CHECKPOINT_DIR}")
+    # Allow first-run startup without local weights; some pipelines download
+    # model artifacts lazily when checkpoint path is empty.
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
     descriptions = _load_descriptions()
     cloth_name = _safe_name(cloth_name)
+    _sync_runtime_volume(commit=False)
 
     job_id = uuid.uuid4().hex[:12]
     job_dir = JOBS_DIR / job_id
@@ -218,6 +240,7 @@ async def run_tryon(
     if not candidates:
         raise HTTPException(status_code=500, detail="Inference finished but no output image was generated")
 
+    _sync_runtime_volume(commit=True)
     result_file = candidates[0].name
     return {
         "job_id": job_id,

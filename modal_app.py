@@ -150,7 +150,8 @@ def fastapi_app():
         )
 
     os.environ.setdefault("CHECKPOINT_DIR", str(resolved_checkpoint))
-    os.environ.setdefault("RUNTIME_DIR", "/tmp/mobile_vton_runtime")
+    os.environ.setdefault("RUNTIME_DIR", f"{MODEL_MOUNT_PATH}/runtime")
+    os.environ.setdefault("RUNTIME_VOLUME_NAME", MODEL_VOLUME_NAME)
     os.environ.setdefault("MODEL_DIR", f"{PROJECT_ROOT_REMOTE}/2026_CVPR_Mobile-VTON")
     os.environ.setdefault("EXTERNAL_TEST_DIR", f"{PROJECT_ROOT_REMOTE}/test/test")
     sys.path.insert(0, PROJECT_ROOT_REMOTE)
