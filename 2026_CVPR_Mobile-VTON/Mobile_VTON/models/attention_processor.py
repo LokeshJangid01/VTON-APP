@@ -117,7 +117,20 @@ class Attention(nn.Module):
         super().__init__()
 
         # To prevent circular import.
-        from diffusers.models.normalization import FP32LayerNorm, LpNorm, RMSNorm
+        try:
+            from diffusers.models.normalization import FP32LayerNorm, LpNorm, RMSNorm
+        except ImportError:
+            from diffusers.models.normalization import FP32LayerNorm, RMSNorm
+
+            class LpNorm(nn.Module):
+                def __init__(self, p=2, dim=-1, eps=1e-12):
+                    super().__init__()
+                    self.p = p
+                    self.dim = dim
+                    self.eps = eps
+
+                def forward(self, x):
+                    return F.normalize(x, p=self.p, dim=self.dim, eps=self.eps)
 
         self.inner_dim = out_dim if out_dim is not None else dim_head * heads
         self.inner_kv_dim = self.inner_dim if kv_heads is None else dim_head * kv_heads
