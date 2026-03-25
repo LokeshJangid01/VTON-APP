@@ -110,6 +110,12 @@ def download(repo_id: str, revision: str = "main"):
     print(f"Checkpoint synced to: {out}")
 
 
+@app.local_entrypoint()
+def inspect():
+    out = inspect_checkpoint.remote()
+    print(out)
+
+
 @app.function(
     image=image,
     volumes={MODEL_MOUNT_PATH: model_volume},
