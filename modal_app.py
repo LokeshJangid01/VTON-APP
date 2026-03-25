@@ -6,12 +6,10 @@ APP_NAME = "vton-fastapi"
 MODEL_VOLUME_NAME = "vton-model-checkpoints"
 MODEL_MOUNT_PATH = "/vol/models"
 PROJECT_ROOT_REMOTE = "/root/project"
-BUNDLED_CHECKPOINT_PATH = "/root/checkpoint_bundle/checkpoint"
 
 app = modal.App(APP_NAME)
 
 local_project_root = Path(__file__).resolve().parent
-local_checkpoint_root = local_project_root / "2026_CVPR_Mobile-VTON" / "checkpoint" / "checkpoint"
 
 
 def _ignore_project_file(path: Path) -> bool:
@@ -29,12 +27,6 @@ image = (
         ignore=_ignore_project_file,
     )
 )
-if local_checkpoint_root.exists():
-    image = image.add_local_dir(
-        str(local_checkpoint_root),
-        remote_path=BUNDLED_CHECKPOINT_PATH,
-        copy=True,
-    )
 model_volume = modal.Volume.from_name(MODEL_VOLUME_NAME, create_if_missing=True)
 
 
@@ -112,8 +104,6 @@ def fastapi_app():
 
     checkpoint_candidates = [
         Path(f"{MODEL_MOUNT_PATH}/checkpoint/checkpoint"),
-        Path(BUNDLED_CHECKPOINT_PATH),
-        Path(f"{PROJECT_ROOT_REMOTE}/2026_CVPR_Mobile-VTON/checkpoint/checkpoint"),
     ]
     resolved_checkpoint = None
     for candidate in checkpoint_candidates:
