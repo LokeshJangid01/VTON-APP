@@ -1,0 +1,43 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Python cache/build
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments / local Python installs
+.conda/
+.venv/
+venv/
+env/
+
+# Package manager caches
+.pip-cache/
+
+# Model weights / checkpoints / artifacts
+checkpoint/
+checkpoints/
+weights/
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.onnx
+*.bin
+
+# Runtime outputs
+output/
+outputs/
+
+# Local test/generated images
+Mobile_VTON/VITON-HD/test/image/*.jpg
+!Mobile_VTON/VITON-HD/test/image/person.jpg
+Mobile_VTON/VITON-HD/test/cloth/*.jpg
+!Mobile_VTON/VITON-HD/test/cloth/cloth.jpg

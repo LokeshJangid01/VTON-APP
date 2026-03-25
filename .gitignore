@@ -1,0 +1,46 @@
+# Python / envs
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.venv/
+**/venv/
+**/env/
+**/.conda/
+**/site-packages/
+
+# Caches
+**/.pip-cache/
+**/.cache/
+**/.pytest_cache/
+**/.mypy_cache/
+
+# Outputs / artifacts
+**/output/
+**/outputs/
+**/runs/
+**/logs/
+**/checkpoint/
+**/checkpoints/
+**/weights/
+**/results/
+
+# Large model/data formats
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.onnx
+*.bin
+*.h5
+*.pb
+*.npy
+*.npz
+*.zip
+*.7z
+*.tar
+*.gz
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mobile-VTON FastAPI</title>
+  <style>
+    :root {
+      --bg: #f4f2ea;
+      --panel: #fffdf7;
+      --text: #1d2a36;
+      --muted: #5f6c76;
+      --accent: #0f766e;
+      --accent-2: #f59e0b;
+      --border: #e6e0d2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background:
+        radial-gradient(circle at 10% 20%, #fff8df 0%, transparent 38%),
+        radial-gradient(circle at 90% 0%, #d6f5f1 0%, transparent 25%),
+        var(--bg);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+    }
+    p {
+      margin: 0 0 20px;
+      color: var(--muted);
+    }
+    .grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1fr 1fr;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.06);
+    }
+    label {
+      display: block;
+      margin: 10px 0 6px;
+      font-weight: 600;
+    }
+    input[type="file"], input[type="number"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+    }
+    button {
+      margin-top: 14px;
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 18px;
+      background: linear-gradient(135deg, var(--accent), #0e9388);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .cloth-list {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      max-height: 420px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .cloth-item {
+      border: 2px solid transparent;
+      border-radius: 10px;
+      padding: 6px;
+      background: #fff;
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .cloth-item.selected {
+      border-color: var(--accent-2);
+      transform: translateY(-2px);
+    }
+    .cloth-item img {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      border-radius: 6px;
+      display: block;
+    }
+    .cloth-name {
+      margin-top: 5px;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .status {
+      margin-top: 10px;
+      color: var(--muted);
+      min-height: 22px;
+    }
+    .result img {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      margin-top: 10px;
+      background: #fff;
+    }
+    pre {
+      margin-top: 10px;
+      background: #10161d;
+      color: #d5e3f0;
+      border-radius: 10px;
+      padding: 10px;
+      max-height: 240px;
+      overflow: auto;
+      font-size: 0.75rem;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Mobile-VTON Try-On</h1>
+    <p>Upload a person image and select cloth from <code>test/cloth</code>.</p>
+
+    <div class="grid">
+      <div class="card">
+        <label for="personImage">Person Image</label>
+        <input id="personImage" type="file" accept="image/*" />
+
+        <label for="numSteps">Inference Steps</label>
+        <input id="numSteps" type="number" min="1" max="50" value="8" />
+
+        <label for="guidanceScale">Guidance Scale</label>
+        <input id="guidanceScale" type="number" min="0.1" max="20" step="0.1" value="2.0" />
+
+        <button id="runBtn">Run Try-On</button>
+        <div class="status" id="status"></div>
+      </div>
+
+      <div class="card">
+        <label>Choose Cloth</label>
+        <div id="clothList" class="cloth-list"></div>
+      </div>
+    </div>
+
+    <div class="card result" style="margin-top:16px;">
+      <label>Result</label>
+      <img id="resultImage" alt="Result appears here" />
+      <pre id="logs"></pre>
+    </div>
+  </div>
+
+  <script>
+    const clothListEl = document.getElementById("clothList");
+    const runBtn = document.getElementById("runBtn");
+    const statusEl = document.getElementById("status");
+    const resultImageEl = document.getElementById("resultImage");
+    const logsEl = document.getElementById("logs");
+    let selectedCloth = null;
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function selectCloth(name) {
+      selectedCloth = name;
+      document.querySelectorAll(".cloth-item").forEach((el) => {
+        el.classList.toggle("selected", el.dataset.name === name);
+      });
+    }
+
+    async function loadCloths() {
+      setStatus("Loading cloth list...");
+      const res = await fetch("/api/cloths");
+      if (!res.ok) {
+        setStatus("Failed to load cloth list.");
+        return;
+      }
+      const data = await res.json();
+      clothListEl.innerHTML = "";
+      data.cloths.forEach((name, idx) => {
+        const item = document.createElement("div");
+        item.className = "cloth-item";
+        item.dataset.name = name;
+        item.innerHTML = `
+          <img src="/api/cloths/${encodeURIComponent(name)}" alt="${name}" />
+          <div class="cloth-name">${name}</div>
+        `;
+        item.onclick = () => selectCloth(name);
+        clothListEl.appendChild(item);
+        if (idx === 0) {
+          selectCloth(name);
+        }
+      });
+      setStatus(data.cloths.length ? "Ready." : "No cloth images found.");
+    }
+
+    runBtn.onclick = async () => {
+      const personFile = document.getElementById("personImage").files[0];
+      const numSteps = document.getElementById("numSteps").value;
+      const guidanceScale = document.getElementById("guidanceScale").value;
+
+      if (!personFile) {
+        setStatus("Select a person image first.");
+        return;
+      }
+      if (!selectedCloth) {
+        setStatus("Select a cloth image.");
+        return;
+      }
+
+      runBtn.disabled = true;
+      setStatus("Running inference... this can take a while.");
+      logsEl.textContent = "";
+
+      const formData = new FormData();
+      formData.append("person_image", personFile);
+      formData.append("cloth_name", selectedCloth);
+      formData.append("num_inference_steps", numSteps);
+      formData.append("guidance_scale", guidanceScale);
+
+      try {
+        const res = await fetch("/api/tryon", {
+          method: "POST",
+          body: formData
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "Try-on request failed");
+        }
+        resultImageEl.src = `${data.result_url}?t=${Date.now()}`;
+        logsEl.textContent = data.logs_tail || "";
+        setStatus("Done.");
+      } catch (err) {
+        setStatus(`Error: ${err.message}`);
+      } finally {
+        runBtn.disabled = false;
+      }
+    };
+
+    loadCloths();
+  </script>
+</body>
+</html>
+
