@@ -59,6 +59,39 @@ from Mobile_VTON.models.embeddings import get_time_text_embedding_module, get_ti
 import torch.nn.functional as F
 
 
+def _get_2d_rope_compat(embed_dim, crops_coords, grid_size, device):
+    # diffusers changed this function signature across versions.
+    call_variants = [
+        lambda: get_2d_rotary_pos_embed(embed_dim, crops_coords, grid_size, device=device, output_type="pt"),
+        lambda: get_2d_rotary_pos_embed(embed_dim, crops_coords, grid_size, output_type="pt"),
+        lambda: get_2d_rotary_pos_embed(embed_dim, crops_coords, grid_size),
+    ]
+
+    last_err = None
+    rope = None
+    for call in call_variants:
+        try:
+            rope = call()
+            break
+        except TypeError as e:
+            last_err = e
+    if rope is None:
+        raise last_err
+
+    # Normalize to (cos, sin) tuple on target device.
+    if isinstance(rope, tuple) and len(rope) == 2:
+        cos, sin = rope
+        cos = torch.as_tensor(cos).to(device)
+        sin = torch.as_tensor(sin).to(device)
+        return cos, sin
+
+    rope_t = torch.as_tensor(rope).to(device)
+    if rope_t.ndim < 2 or rope_t.shape[-1] % 2 != 0:
+        raise ValueError(f"Unexpected rotary embedding shape: {tuple(rope_t.shape)}")
+    half = rope_t.shape[-1] // 2
+    return rope_t[..., :half], rope_t[..., half:]
+
+
 
 def resize_tensor(x, size=(1024, 1024), align_corners=False):
     """
@@ -1660,19 +1693,12 @@ class UNet2DConditionModel(
         return UNet2DConditionOutput(sample=sample), garment_features
 
     def calculate_2d_rope_emb(self, block_out_channel, num_attention_heads, image_height, image_width):
-        kwargs = dict(
-            dim=block_out_channel // num_attention_heads,
+        return _get_2d_rope_compat(
+            embed_dim=block_out_channel // num_attention_heads,
             crops_coords=((0, 0), (image_width, image_height)),
             grid_size=(image_width, image_height),
-            output_type="pt",
+            device=self.device,
         )
-        try:
-            image_rotary_emb = get_2d_rotary_pos_embed(device=self.device, **kwargs)
-        except TypeError:
-            image_rotary_emb = get_2d_rotary_pos_embed(**kwargs)
-            if isinstance(image_rotary_emb, tuple):
-                image_rotary_emb = tuple(x.to(self.device) for x in image_rotary_emb)
-        return image_rotary_emb
 
     def set_sample_size(self, sample_size):
         logger.info(f"Setting sample size to {sample_size}")
@@ -1722,18 +1748,12 @@ class UNet2DConditionModel(
         prev_image_height, prev_image_width, align_corners=True
     ):
         device = self.device
-        kwargs = dict(
-            dim=block_out_channel // num_attention_heads,
+        image_rotary_emb = _get_2d_rope_compat(
+            embed_dim=block_out_channel // num_attention_heads,
             crops_coords=((0, 0), (prev_image_height, prev_image_width)),
             grid_size=(prev_image_height, prev_image_width),
-            output_type="pt",
+            device=device,
         )
-        try:
-            image_rotary_emb = get_2d_rotary_pos_embed(device=device, **kwargs)
-        except TypeError:
-            image_rotary_emb = get_2d_rotary_pos_embed(**kwargs)
-            if isinstance(image_rotary_emb, tuple):
-                image_rotary_emb = tuple(x.to(device) for x in image_rotary_emb)
         cos, sin = image_rotary_emb
         D = (block_out_channel // num_attention_heads) // 2
         emb_h_0 = cos[:, :D]
