@@ -42,17 +42,44 @@ def sync_checkpoint_from_hf(repo_id: str, revision: str = "main") -> str:
     Example:
       modal run modal_app.py::download --repo-id your-org/your-model-repo
     """
+    import shutil
     from huggingface_hub import snapshot_download
 
     target_dir = Path(MODEL_MOUNT_PATH) / "checkpoint" / "checkpoint"
-    target_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir = Path(MODEL_MOUNT_PATH) / "checkpoint" / "_raw_download"
+    raw_dir.mkdir(parents=True, exist_ok=True)
 
     snapshot_download(
         repo_id=repo_id,
         revision=revision,
-        local_dir=str(target_dir),
+        local_dir=str(raw_dir),
         local_dir_use_symlinks=False,
     )
+
+    # Locate the actual checkpoint root (repo layouts can be nested).
+    required_rel = [
+        Path("image_encoder/config.json"),
+        Path("vae/config.json"),
+        Path("denoiser/config.json"),
+    ]
+    candidates = []
+    for cfg in raw_dir.rglob("image_encoder/config.json"):
+        root = cfg.parent.parent
+        if all((root / rel).exists() for rel in required_rel):
+            candidates.append(root)
+    if not candidates:
+        raise RuntimeError(
+            f"Downloaded repo '{repo_id}' but could not find checkpoint root containing "
+            "image_encoder/, vae/, denoiser/."
+        )
+
+    # Pick the shortest path candidate and normalize it to the expected target path.
+    source_dir = sorted(candidates, key=lambda p: len(p.parts))[0]
+    if target_dir.exists():
+        shutil.rmtree(target_dir, ignore_errors=True)
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source_dir, target_dir)
+
     model_volume.commit()
     return str(target_dir)
 
