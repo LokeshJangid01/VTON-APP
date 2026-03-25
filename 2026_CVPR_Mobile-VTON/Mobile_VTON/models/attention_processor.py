@@ -19,28 +19,29 @@ except ImportError:
     def is_torch_xla_version(*args, **kwargs):
         return False
 from diffusers.utils.torch_utils import maybe_allow_in_graph
-from diffusers.models.attention_processor import (
-    AttnProcessor,
-    SpatialNorm,
-    AttnProcessor2_0,
-    XLAFlashAttnProcessor2_0,
-    AttnProcessorNPU,
-    CustomDiffusionAttnProcessor,
-    CustomDiffusionXFormersAttnProcessor,
-    CustomDiffusionAttnProcessor2_0,
-    AttnAddedKVProcessor,
-    AttnAddedKVProcessor2_0,
-    SlicedAttnAddedKVProcessor,
-    XFormersAttnAddedKVProcessor,
-    IPAdapterAttnProcessor,
-    IPAdapterAttnProcessor2_0,
-    IPAdapterXFormersAttnProcessor,
-    JointAttnProcessor2_0,
-    XFormersJointAttnProcessor,
-    XFormersAttnProcessor,
-    SlicedAttnProcessor,
-    AttentionProcessor,
-)
+from diffusers.models import attention_processor as dap
+
+AttnProcessor = dap.AttnProcessor
+SpatialNorm = dap.SpatialNorm
+AttnProcessor2_0 = dap.AttnProcessor2_0
+CustomDiffusionAttnProcessor = getattr(dap, "CustomDiffusionAttnProcessor", AttnProcessor)
+CustomDiffusionXFormersAttnProcessor = getattr(dap, "CustomDiffusionXFormersAttnProcessor", AttnProcessor)
+CustomDiffusionAttnProcessor2_0 = getattr(dap, "CustomDiffusionAttnProcessor2_0", AttnProcessor2_0)
+AttnAddedKVProcessor = getattr(dap, "AttnAddedKVProcessor", AttnProcessor)
+AttnAddedKVProcessor2_0 = getattr(dap, "AttnAddedKVProcessor2_0", AttnProcessor2_0)
+SlicedAttnAddedKVProcessor = getattr(dap, "SlicedAttnAddedKVProcessor", AttnAddedKVProcessor2_0)
+IPAdapterAttnProcessor = getattr(dap, "IPAdapterAttnProcessor", AttnProcessor)
+IPAdapterAttnProcessor2_0 = getattr(dap, "IPAdapterAttnProcessor2_0", AttnProcessor2_0)
+JointAttnProcessor2_0 = getattr(dap, "JointAttnProcessor2_0", AttnProcessor2_0)
+SlicedAttnProcessor = getattr(dap, "SlicedAttnProcessor", AttnProcessor)
+AttentionProcessor = getattr(dap, "AttentionProcessor", AttnProcessor)
+
+# Optional symbols vary across diffusers versions.
+XLAFlashAttnProcessor2_0 = getattr(dap, "XLAFlashAttnProcessor2_0", None)
+AttnProcessorNPU = getattr(dap, "AttnProcessorNPU", AttnProcessor2_0)
+XFormersAttnAddedKVProcessor = getattr(dap, "XFormersAttnAddedKVProcessor", AttnAddedKVProcessor2_0)
+IPAdapterXFormersAttnProcessor = getattr(dap, "IPAdapterXFormersAttnProcessor", IPAdapterAttnProcessor2_0)
+XFormersJointAttnProcessor = getattr(dap, "XFormersJointAttnProcessor", JointAttnProcessor2_0)
 from diffusers.models.embeddings import apply_rotary_emb
 
 if is_torch_npu_available():
@@ -288,12 +289,14 @@ class Attention(nn.Module):
                 Specify the partition specification if using SPMD. Otherwise None.
         """
         if use_xla_flash_attention:
-            if not is_torch_xla_available:
+            if not is_torch_xla_available():
                 raise "torch_xla is not available"
             elif is_torch_xla_version("<", "2.3"):
                 raise "flash attention pallas kernel is supported from torch_xla version 2.3"
             elif is_spmd() and is_torch_xla_version("<", "2.4"):
                 raise "flash attention pallas kernel using SPMD is supported from torch_xla version 2.4"
+            elif XLAFlashAttnProcessor2_0 is None:
+                raise RuntimeError("XLAFlashAttnProcessor2_0 is unavailable in this diffusers version")
             else:
                 processor = XLAFlashAttnProcessor2_0(partition_spec)
         else:
